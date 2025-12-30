@@ -1,0 +1,18 @@
+# Marker PDF to Markdown Converter
+# Install with: pip install -r requirements.txt
+
+marker-pdf>=1.10.0
+
+# Note: tkinter is also required but cannot be installed via pip.
+# It's part of Python's standard library and needs system-level installation:
+#
+# macOS (Homebrew):
+#   brew install python-tk@3.14  # Match your Python version
+#
+# Ubuntu/Debian:
+#   sudo apt-get install python3-tk
+#
+# Windows:
+#   Tkinter is included with the official Python installer from python.org
+#   (Make sure to check "tcl/tk" during installation)
+
