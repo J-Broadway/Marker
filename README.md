@@ -4,10 +4,14 @@ A simple GUI application for converting PDF files to Markdown using [marker-pdf]
 
 ## Features
 
-- Select input PDF and output directory via file browser
-- Convert all pages or specify a custom page range
-- Real-time terminal output during conversion
-- Cancel in-progress conversions
+- **Multiple PDF support** - Add multiple PDFs for batch conversion
+- **Custom output names** - Rename output files via editable table (double-click to edit)
+- **URL downloads** - Add PDFs directly from web URLs
+- **Project folders** - Automatically create organized project folders for each PDF
+- **Favorites** - Save frequently used output directories for quick access
+- **Page range selection** - Convert all pages or specify a custom range
+- **Real-time output** - Monitor conversion progress in the terminal panel
+- **Cross-platform** - Works on macOS, Windows, and Linux
 
 ## Prerequisites
 
@@ -68,13 +72,29 @@ Double-click `marker.bat` or run from Command Prompt:
 
 ## Usage
 
-1. Click **Browse...** next to "Input PDF" to select your PDF file
-2. The output directory defaults to the same folder as the PDF, or choose a different one
-3. Optionally uncheck "All Pages" to specify a page range (1-based page numbers)
-4. Click **Convert** to start the conversion
-5. Monitor progress in the terminal output panel
-6. Click **Cancel** to stop an in-progress conversion
+1. **Add PDFs** - Click "Add Files..." to select PDFs, or "Add URL..." to download from a web link
+2. **Set output names** - Double-click the "Output Name" column to rename files
+3. **Choose output directory** - Browse or select from your saved favorites
+4. **Configure options:**
+   - **Create Project Folder** - Creates a folder for each PDF with the converted files
+   - **Move PDF to output directory** - Moves the original PDF into the project folder
+5. **Page range** - Optionally uncheck "All Pages" to specify a range (1-based)
+6. **Convert** - Click to start conversion; monitor progress in the terminal panel
+7. **Open** - Click to open the output directory in your file manager
 
-The converted Markdown file will be saved in the output directory.
+### Output Structure
 
+With "Create Project Folder" enabled, each PDF gets its own organized folder:
 
+```
+/output_directory/
+└── My Book/
+    ├── My Book.pdf                    # Original PDF (if moved)
+    └── My Book_marker_output/         # Converted files
+        ├── My Book.md
+        └── images/
+```
+
+## License
+
+MIT
