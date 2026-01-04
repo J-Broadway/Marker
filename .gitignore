@@ -21,3 +21,6 @@ build/
 # PDF files (user data)
 *.pdf
 
+# App user data
+.marker_favorites.json
+
