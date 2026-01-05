@@ -18,6 +18,51 @@ import re
 from pathlib import Path
 
 
+class ToolTip:
+    """Simple tooltip that appears on hover with a delay."""
+    def __init__(self, widget, text, delay=500):
+        self.widget = widget
+        self.text = text
+        self.delay = delay  # milliseconds
+        self.tipwindow = None
+        self.scheduled_id = None
+        widget.bind("<Enter>", self.schedule_show)
+        widget.bind("<Leave>", self.hide)
+    
+    def schedule_show(self, event=None):
+        self.hide()  # Cancel any existing tooltip
+        self.scheduled_id = self.widget.after(self.delay, self.show)
+    
+    def show(self, event=None):
+        if self.tipwindow:
+            return
+        x = self.widget.winfo_rootx() + 20
+        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 5
+        self.tipwindow = tw = tk.Toplevel(self.widget)
+        tw.wm_overrideredirect(True)
+        tw.wm_geometry(f"+{x}+{y}")
+        # Set background to match tooltip for square appearance
+        tw.configure(background="#000000")
+        # Frame with border for square corners
+        frame = tk.Frame(tw, background="#ffffe0", bd=1, relief=tk.FLAT)
+        frame.pack(padx=1, pady=1)
+        label = tk.Label(
+            frame, text=self.text, justify=tk.LEFT,
+            background="#ffffe0", foreground="#000000",
+            font=("TkDefaultFont", 10),
+            padx=6, pady=4
+        )
+        label.pack()
+    
+    def hide(self, event=None):
+        if self.scheduled_id:
+            self.widget.after_cancel(self.scheduled_id)
+            self.scheduled_id = None
+        if self.tipwindow:
+            self.tipwindow.destroy()
+            self.tipwindow = None
+
+
 class MarkerGUI:
     def __init__(self, root):
         self.root = root
@@ -36,7 +81,16 @@ class MarkerGUI:
         
         # Favorites storage
         self.favorites_file = Path(__file__).parent / ".marker_favorites.json"
-        self.favorites = self.load_favorites()
+        self.all_favorites = self.load_favorites()
+        
+        # Separate output and input favorites
+        self.favorites = self.all_favorites.get("output", [])
+        self.input_favorites = self.all_favorites.get("input", [])
+        
+        # Add default Downloads folder to input favorites if empty
+        downloads_folder = str(Path.home() / "Downloads")
+        if not self.input_favorites and Path(downloads_folder).exists():
+            self.input_favorites.append(downloads_folder)
         
         self.setup_ui()
     
@@ -45,16 +99,21 @@ class MarkerGUI:
         try:
             if self.favorites_file.exists():
                 with open(self.favorites_file, 'r') as f:
-                    return json.load(f)
+                    data = json.load(f)
+                    # Handle legacy format (list instead of dict)
+                    if isinstance(data, list):
+                        return {"output": data, "input": []}
+                    return data
         except Exception:
             pass
-        return []
+        return {"output": [], "input": []}
     
     def save_favorites(self):
         """Save favorites to JSON file."""
         try:
+            data = {"output": self.favorites, "input": self.input_favorites}
             with open(self.favorites_file, 'w') as f:
-                json.dump(self.favorites, f, indent=2)
+                json.dump(data, f, indent=2)
         except Exception as e:
             messagebox.showerror("Error", f"Failed to save favorites: {e}")
     
@@ -98,7 +157,7 @@ class MarkerGUI:
         # Bind double-click for inline editing
         self.pdf_tree.bind("<Double-1>", self.on_double_click)
         
-        # Buttons for file management
+        # Buttons for file management - Row 1
         btn_container = ttk.Frame(file_frame)
         btn_container.pack(fill=tk.X, pady=(5, 0))
         
@@ -108,7 +167,28 @@ class MarkerGUI:
         ttk.Button(btn_container, text="Clear All", command=self.clear_files).pack(side=tk.LEFT)
         
         # Hint label
-        ttk.Label(file_frame, text="Double-click Output Name to edit", foreground="gray").pack(side=tk.RIGHT)
+        ttk.Label(btn_container, text="Double-click Output Name to edit", foreground="gray").pack(side=tk.RIGHT)
+        
+        # Input favorites row - Row 2
+        fav_input_row = ttk.Frame(file_frame)
+        fav_input_row.pack(fill=tk.X, pady=(5, 0))
+        
+        ttk.Label(fav_input_row, text="Quick open:").pack(side=tk.LEFT, padx=(0, 5))
+        
+        self.input_fav_var = tk.StringVar(value="")
+        self.input_fav_combo = ttk.Combobox(
+            fav_input_row,
+            textvariable=self.input_fav_var,
+            state="readonly",
+            width=30
+        )
+        self.input_fav_combo.pack(side=tk.LEFT, padx=(0, 5))
+        self.input_fav_combo.bind("<<ComboboxSelected>>", self.on_input_favorite_selected)
+        self.update_input_favorites_combo()
+        ToolTip(self.input_fav_combo, "Select folder and open file browser", delay=500)
+        
+        ttk.Button(fav_input_row, text="★ Add", command=self.add_input_favorite).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(fav_input_row, text="Remove", command=self.remove_input_favorite).pack(side=tk.LEFT)
         
         # --- Output Directory Selection ---
         output_frame = ttk.LabelFrame(main_frame, text="Output Directory", padding="5")
@@ -155,12 +235,27 @@ class MarkerGUI:
             variable=self.create_project_folder
         ).pack(side=tk.LEFT, padx=(0, 20))
         
-        self.move_pdf = tk.BooleanVar(value=True)
-        ttk.Checkbutton(
+        # PDF handling dropdown
+        ttk.Label(checkbox_row, text="PDF:").pack(side=tk.LEFT, padx=(0, 5))
+        self.pdf_action = tk.StringVar(value="Move PDF")
+        self.pdf_action_combo = ttk.Combobox(
             checkbox_row,
-            text="Move PDF to output directory",
-            variable=self.move_pdf
-        ).pack(side=tk.LEFT)
+            textvariable=self.pdf_action,
+            values=["Move PDF", "Copy PDF", "Symbolic Link", "Symbolic Backlink", "Do Nothing"],
+            state="readonly",
+            width=16
+        )
+        self.pdf_action_combo.pack(side=tk.LEFT)
+        
+        # Tooltip for PDF action dropdown
+        pdf_action_help = (
+            "Move PDF: Move and rename PDF to output folder\n"
+            "Copy PDF: Copy PDF to output folder (keeps original)\n"
+            "Symbolic Link: Create symlink in output pointing to original\n"
+            "Symbolic Backlink: Move PDF to output, symlink back to original location\n"
+            "Do Nothing: Leave PDF in place, only create marker output"
+        )
+        ToolTip(self.pdf_action_combo, pdf_action_help)
         
         # --- Page Range Selection ---
         page_frame = ttk.LabelFrame(main_frame, text="Page Range", padding="5")
@@ -272,6 +367,52 @@ class MarkerGUI:
             self.save_favorites()
             self.update_favorites_combo()
     
+    def update_input_favorites_combo(self):
+        """Update the input favorites combobox."""
+        display_names = [Path(f).name for f in self.input_favorites]
+        self.input_fav_combo['values'] = display_names
+        if display_names:
+            self.input_fav_combo.current(0)
+            self.input_fav_var.set(display_names[0])
+    
+    def on_input_favorite_selected(self, event=None):
+        """Handle input favorite selection - immediately opens file browser."""
+        self.browse_pdf()
+    
+    def get_input_start_directory(self):
+        """Get the starting directory for the file browser."""
+        idx = self.input_fav_combo.current()
+        if idx >= 0 and idx < len(self.input_favorites):
+            path = self.input_favorites[idx]
+            if Path(path).exists():
+                return path
+        # Fallback to Downloads or home
+        downloads = Path.home() / "Downloads"
+        return str(downloads) if downloads.exists() else str(Path.home())
+    
+    def add_input_favorite(self):
+        """Add a directory to input favorites."""
+        directory = filedialog.askdirectory(title="Select Folder to Add to Favorites")
+        if directory:
+            if directory not in self.input_favorites:
+                self.input_favorites.append(directory)
+                self.save_favorites()
+                self.update_input_favorites_combo()
+                # Select the newly added favorite
+                self.input_fav_combo.current(len(self.input_favorites) - 1)
+            else:
+                messagebox.showinfo("Already Exists", "This directory is already in favorites.")
+    
+    def remove_input_favorite(self):
+        """Remove selected input favorite."""
+        idx = self.input_fav_combo.current()
+        if idx >= 0 and idx < len(self.input_favorites):
+            del self.input_favorites[idx]
+            self.save_favorites()
+            self.update_input_favorites_combo()
+        else:
+            messagebox.showwarning("No Selection", "Please select a favorite to remove.")
+    
     def open_output_directory(self):
         """Open the output directory in the system file manager."""
         path = self.output_path.get().strip()
@@ -324,8 +465,16 @@ class MarkerGUI:
         if current_output_name.lower().endswith(".pdf"):
             current_output_name = current_output_name[:-4]
         
-        # Create entry widget for editing
-        self.edit_entry = ttk.Entry(self.pdf_tree)
+        # Create entry widget for editing (use tk.Entry for full style control)
+        self.edit_entry = tk.Entry(
+            self.pdf_tree,
+            background="#e0e0e0",         # Light grey background
+            foreground="#000000",          # Black text
+            insertbackground="#000000",    # Black cursor
+            selectbackground="#0078d7",
+            selectforeground="#ffffff",
+            relief=tk.FLAT
+        )
         self.edit_entry.insert(0, current_output_name)
         self.edit_entry.select_range(0, tk.END)
         
@@ -410,8 +559,10 @@ class MarkerGUI:
     
     def browse_pdf(self):
         """Open file dialog to select multiple PDFs."""
+        start_dir = self.get_input_start_directory()
         filenames = filedialog.askopenfilenames(
             title="Select PDF Files",
+            initialdir=start_dir,
             filetypes=[("PDF Files", "*.pdf"), ("All Files", "*.*")]
         )
         if filenames:
@@ -660,7 +811,7 @@ class MarkerGUI:
             'pdf_files': list(self.pdf_files),
             'output_names': dict(self.output_names),
             'create_project_folder': self.create_project_folder.get(),
-            'move_pdf': self.move_pdf.get(),
+            'pdf_action': self.pdf_action.get(),  # "Move PDF", "Copy PDF", or "Do Nothing"
             'base_output_dir': self.output_path.get()
         }
         
@@ -706,20 +857,45 @@ class MarkerGUI:
                     failed += 1
                     continue
                 
-                # Determine the PDF path to use for marker
-                # If moving, we need to move first so marker uses the new location
+                # Determine the PDF path to use for marker based on pdf_action
                 current_pdf_path = pdf_path
-                if settings['move_pdf']:
-                    new_pdf_path = project_folder / f"{final_name}.pdf"
-                    try:
-                        if Path(pdf_path) != new_pdf_path:
-                            self.root.after(0, self.log, f"    Moving PDF to: {new_pdf_path}\n")
-                            shutil.move(pdf_path, new_pdf_path)
-                            current_pdf_path = str(new_pdf_path)
-                    except Exception as e:
-                        self.root.after(0, self.log, f"\n✗ Failed to move PDF: {e}\n\n")
-                        failed += 1
-                        continue
+                pdf_action = settings['pdf_action']
+                new_pdf_path = project_folder / f"{final_name}.pdf"
+                
+                try:
+                    if pdf_action == "Move PDF" and Path(pdf_path) != new_pdf_path:
+                        self.root.after(0, self.log, f"    Moving PDF to: {new_pdf_path}\n")
+                        shutil.move(pdf_path, new_pdf_path)
+                        current_pdf_path = str(new_pdf_path)
+                    
+                    elif pdf_action == "Copy PDF" and Path(pdf_path) != new_pdf_path:
+                        self.root.after(0, self.log, f"    Copying PDF to: {new_pdf_path}\n")
+                        shutil.copy2(pdf_path, new_pdf_path)
+                        current_pdf_path = str(new_pdf_path)
+                    
+                    elif pdf_action == "Symbolic Link" and Path(pdf_path) != new_pdf_path:
+                        # Create symlink in output folder pointing to original
+                        self.root.after(0, self.log, f"    Creating symlink: {new_pdf_path} → {pdf_path}\n")
+                        if new_pdf_path.exists():
+                            new_pdf_path.unlink()
+                        new_pdf_path.symlink_to(Path(pdf_path).resolve())
+                        current_pdf_path = str(new_pdf_path)
+                    
+                    elif pdf_action == "Symbolic Backlink" and Path(pdf_path) != new_pdf_path:
+                        # Move PDF to output, then symlink back to original location
+                        original_path = Path(pdf_path)
+                        self.root.after(0, self.log, f"    Moving PDF to: {new_pdf_path}\n")
+                        shutil.move(pdf_path, new_pdf_path)
+                        self.root.after(0, self.log, f"    Creating backlink: {original_path} → {new_pdf_path}\n")
+                        original_path.symlink_to(new_pdf_path.resolve())
+                        current_pdf_path = str(new_pdf_path)
+                    
+                    # "Do Nothing" - leave current_pdf_path as is
+                    
+                except Exception as e:
+                    self.root.after(0, self.log, f"\n✗ Failed to handle PDF ({pdf_action}): {e}\n\n")
+                    failed += 1
+                    continue
                 
                 cmd = self.get_marker_command(current_pdf_path, marker_output_dir)
                 if cmd is None:

@@ -73,11 +73,19 @@ Double-click `marker.bat` or run from Command Prompt:
 ## Usage
 
 1. **Add PDFs** - Click "Add Files..." to select PDFs, or "Add URL..." to download from a web link
+   - Use the dropdown next to "Add Files" to select a starting folder
+   - Click ★ to add a folder to favorites, − to remove
+   - Downloads folder is added by default
 2. **Set output names** - Double-click the "Output Name" column to rename files
 3. **Choose output directory** - Browse or select from your saved favorites
 4. **Configure options:**
    - **Create Project Folder** - Creates a folder for each PDF with the converted files
-   - **Move PDF to output directory** - Moves the original PDF into the project folder
+   - **PDF dropdown** - Choose how to handle the original PDF (hover for tooltips):
+     - *Move PDF* (default) - Moves and renames the PDF to the project folder
+     - *Copy PDF* - Copies the PDF to the project folder (keeps original)
+     - *Symbolic Link* - Creates a symlink in the project folder pointing to the original PDF
+     - *Symbolic Backlink* - Moves PDF to project folder, creates symlink at original location
+     - *Do Nothing* - Leaves the PDF in its original location
 5. **Page range** - Optionally uncheck "All Pages" to specify a range (1-based)
 6. **Convert** - Click to start conversion; monitor progress in the terminal panel
 7. **Open** - Click to open the output directory in your file manager
